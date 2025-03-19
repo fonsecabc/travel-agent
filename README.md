@@ -18,7 +18,7 @@ An AI-powered travel assistant that monitors flight prices and sends personalize
 - **Database**: Firebase Firestore
 - **NLP**: CrewAI for dynamic conversation handling
 - **Messaging**: WaAPI for WhatsApp integration
-- **Flight Data**: Amadeus API for flight search and pricing
+- **Flight Data**: fast-flights package for flight search and pricing
 - **Deployment**: Firebase Cloud Functions and Hosting
 
 ## Architecture
@@ -42,7 +42,6 @@ This application follows a conversation-first design where user interactions hap
    - Create a `.env` file based on `.env.example`
    - Add required API keys and configuration:
      - OpenAI API key for CrewAI
-     - Amadeus API credentials (client ID and secret)
      - Firebase configuration (as a JSON service account key)
 
 3. Run the terminal interface for testing:
@@ -50,17 +49,14 @@ This application follows a conversation-first design where user interactions hap
    python terminal_interface.py
    ```
 
-## Amadeus API Integration
+## Flight Search and Price Analysis
 
-The application uses the Amadeus API for flight search and price analysis:
+The application now uses the fast-flights package for flight search and price analysis. fast-flights scrapes flight data from Google Flights and provides real-time pricing without external API keys.
 
-1. **Flight Search**: Search for flights between destinations with flexible date options
-2. **Price Analysis**: Analyze if current prices are good deals based on historical data
-3. **Deal Tracking**: Save good deals for notification to users
-
-To use the Amadeus API:
-1. Sign up for an Amadeus API key at [Amadeus Developers Portal](https://developers.amadeus.com/)
-2. Add your credentials to the `.env` file
+Key points:
+1. **Flight Search**: Directly scrapes Google Flights with fallback support.
+2. **Price Analysis**: Retrieves current flight prices from Google Flights.
+3. **Deal Tracking**: Provides direct booking links for flight reservations. (Not implemented yet)
 
 ## CrewAI Agent System
 
@@ -101,7 +97,7 @@ To set up Firebase:
 - Basic app structure
 - Firebase integration
 - CrewAI agent implementation 
-- Amadeus flight service integration
+- Flight search and price analysis integration
 - Terminal testing interface
 
 ### Phase 2: Expanded Features (Upcoming)

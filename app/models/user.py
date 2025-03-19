@@ -88,6 +88,7 @@ class FlightDeal(BaseModel):
     price_difference_percentage: float  # negative means below average
     found_at: datetime = Field(default_factory=datetime.now)
     details: Dict[str, Any] = Field(default_factory=dict)
+    booking_link: Optional[str] = None
     
     def dict(self, *args, **kwargs):
         """Convert to dict with proper datetime handling."""

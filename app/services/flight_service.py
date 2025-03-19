@@ -1,7 +1,7 @@
 """
 Flight search service for the Travel Agent.
 
-This module provides functions to search for flights and process flight data using the Amadeus API.
+This module provides functions to search for flights and process flight data using the fast-flights package.
 We rely entirely on the LLM's knowledge to determine airport codes for cities mentioned by users.
 """
 
@@ -11,33 +11,20 @@ import uuid
 import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
-import httpx
-from amadeus import Client, ResponseError
+from urllib.parse import urlencode
 
-from app.models.user import SearchHistory, FlightDeal
-# Import user_service functions within each function to avoid circular dependencies
+# Import fast-flights package
+from fast_flights import (
+    get_flights,
+    FlightData,
+    Passengers,
+    Result,
+    TFSData
+)
+
+from app.models.user import SearchHistory
 
 logger = logging.getLogger("travel-agent")
-
-# Initialize Amadeus client
-amadeus_client_id = os.environ.get("AMADEUS_CLIENT_ID")
-amadeus_client_secret = os.environ.get("AMADEUS_CLIENT_SECRET")
-
-if not amadeus_client_id or not amadeus_client_secret:
-    logger.warning("Amadeus API credentials not set. Flight search will not function correctly.")
-    amadeus = None
-else:
-    try:
-        amadeus = Client(
-            client_id=amadeus_client_id,
-            client_secret=amadeus_client_secret
-        )
-        logger.info("Amadeus client initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing Amadeus client: {str(e)}")
-        amadeus = None
-
-# No pre-defined airport mappings - we rely entirely on the LLM's knowledge
 
 async def search_flights(
     user_id: str,
@@ -49,7 +36,7 @@ async def search_flights(
     max_results: int = 10
 ) -> Dict[str, Any]:
     """
-    Search for flights using the Amadeus API.
+    Search for flights using the fast-flights package which scrapes Google Flights.
     
     Args:
         user_id: The ID of the user making the search
@@ -61,16 +48,9 @@ async def search_flights(
         max_results: Maximum number of results to return
         
     Returns:
-        Dictionary with search results containing raw Amadeus data
+        Dictionary with search results
     """
     logger.info(f"Searching flights from {origin} to {destination} on {departure_date}")
-    
-    if not amadeus:
-        logger.error("Amadeus client not initialized. Cannot search flights.")
-        return {
-            "status": "error",
-            "message": "Flight search service is not available at the moment."
-        }
     
     try:
         # Format dates and validate
@@ -102,36 +82,163 @@ async def search_flights(
             if return_date:
                 return_date = (today + timedelta(days=37)).strftime("%Y-%m-%d")
             
-            logger.info(f"Adjusted past date to future: {departure_date}")
-        
         # Ensure return date is after departure date
         if input_return_date and input_return_date < input_departure_date:
             return_date = (input_departure_date + timedelta(days=7)).strftime("%Y-%m-%d")
         
-        # Build search parameters
-        search_params = {
-            "originLocationCode": origin,
-            "destinationLocationCode": destination,
-            "departureDate": departure_date,
-            "adults": adults,
-            "currencyCode": "USD",
-            "max": max_results
-        }
+        # Set up flight data
+        outbound_flight = FlightData(
+            date=departure_date,
+            from_airport=origin,
+            to_airport=destination
+        )
         
+        # Set up passengers
+        passengers = Passengers(
+            adults=adults,
+            children=0,
+            infants_in_seat=0,
+            infants_on_lap=0
+        )
+        
+        # Determine trip type and execute search
         if return_date:
-            search_params["returnDate"] = return_date.strip()
+            # Round trip
+            inbound_flight = FlightData(
+                date=return_date,
+                from_airport=destination,
+                to_airport=origin
+            )
+            
+            flights = await _get_flights(
+                flight_data=[outbound_flight, inbound_flight],
+                trip="round-trip",
+                seat="economy",  # Default to economy, can be customized based on user preference
+                passengers=passengers,
+                currency="USD",
+                max_stops=0
+            )
+        else:
+            # One-way trip
+            flights = await _get_flights(
+                flight_data=[outbound_flight],
+                trip="one-way",
+                seat="economy",
+                passengers=passengers,
+                currency="USD",
+                max_stops=0
+            )
         
-        # Call Amadeus API
-        response = amadeus.shopping.flight_offers_search.get(**search_params)
+        # Process the results
+        processed_results = []
         
-        # Record search history with raw data
+        # The fast-flights package returns a Result object with a 'flights' attribute
+        if hasattr(flights, 'flights') and flights.flights:
+            # Process each flight result
+            for flight in flights.flights[:max_results]:  # Limit to max_results
+                try:
+                    # Get price from the flight
+                    price_str = flight.price if hasattr(flight, 'price') else '0'
+                    # Remove currency symbol and convert to float
+                    # Assuming price is in format like 'R$2313'
+                    numeric_price = float(''.join(filter(lambda x: x.isdigit() or x == '.', price_str)))
+                    
+                    # Parse the duration string if available (format: "6 hr 34 min")
+                    duration_minutes = 0
+                    if hasattr(flight, 'duration') and flight.duration:
+                        duration_str = flight.duration
+                        try:
+                            # Extract hours and minutes
+                            hours = 0
+                            minutes = 0
+                            
+                            if 'hr' in duration_str:
+                                hours_part = duration_str.split('hr')[0].strip()
+                                hours = int(hours_part)
+                            
+                            if 'min' in duration_str:
+                                if 'hr' in duration_str:
+                                    minutes_part = duration_str.split('hr')[1].split('min')[0].strip()
+                                else:
+                                    minutes_part = duration_str.split('min')[0].strip()
+                                minutes = int(minutes_part)
+                            
+                            duration_minutes = hours * 60 + minutes
+                        except (ValueError, IndexError):
+                            # If parsing fails, keep the default of 0
+                            pass
+                    
+                    # Create a simplified result structure
+                    result = {
+                        "price": {
+                            "total": numeric_price,
+                            "currency": "USD"  # Default to USD, actual currency may vary
+                        },
+                        "itineraries": [],
+                        "airline": flight.name if hasattr(flight, 'name') else "Unknown"
+                    }
+                    
+                    # Create segments for the outbound journey
+                    outbound_segments = []
+                    if hasattr(flight, 'departure') and hasattr(flight, 'arrival'):
+                        # Parse departure and arrival times
+                        outbound_segments.append({
+                            "departure": {
+                                "at": flight.departure,
+                                "iataCode": origin
+                            },
+                            "arrival": {
+                                "at": flight.arrival,
+                                "iataCode": destination
+                            },
+                            "carrierCode": flight.name if hasattr(flight, 'name') else "Unknown",
+                            "number": "N/A",
+                            "duration": duration_minutes  # Use parsed duration in minutes
+                        })
+                    
+                    # Add the outbound itinerary
+                    result["itineraries"].append({
+                        "segments": outbound_segments,
+                        "duration": duration_minutes  # Use parsed duration in minutes
+                    })
+                    
+                    # Add return itinerary if it's a round trip
+                    if return_date:
+                        return_segments = []
+                        # We don't have specific return flight details in the flight object
+                        # So create a placeholder segment with estimated info
+                        return_segments.append({
+                            "departure": {
+                                "at": f"Unknown time on {return_date}",
+                                "iataCode": destination
+                            },
+                            "arrival": {
+                                "at": f"Unknown time on {return_date}",
+                                "iataCode": origin
+                            },
+                            "carrierCode": flight.name if hasattr(flight, 'name') else "Unknown",
+                            "number": "N/A",
+                            "duration": 0  # Use a default numeric value
+                        })
+                        
+                        result["itineraries"].append({
+                            "segments": return_segments,
+                            "duration": 0  # Use a default numeric value
+                        })
+
+                    processed_results.append(result)
+                except Exception as e:
+                    logger.error(f"Error processing flight result: {str(e)}")
+                    continue
+
+        # Record search history with processed data
         search_id = await record_search_history(
             user_id=user_id,
             origin=origin,
             destination=destination,
             departure_date=departure_date,
             return_date=return_date,
-            results=response.data  # Store raw Amadeus data
+            results=processed_results
         )
         
         return {
@@ -141,25 +248,8 @@ async def search_flights(
             "destination": destination,
             "departure_date": departure_date,
             "return_date": return_date,
-            "raw_data": response.data,  # Return raw Amadeus data
-            "result_count": len(response.data)
-        }
-        
-    except ResponseError as e:
-        logger.error(f"Amadeus API error: {str(e)}")
-        error_message = "An error occurred while searching flights."
-        
-        # Try to extract more detailed error information
-        try:
-            error_detail = e.response.result.get("errors", [{}])[0].get("detail", "")
-            if error_detail:
-                error_message = error_detail
-        except:
-            pass
-        
-        return {
-            "status": "error",
-            "message": error_message
+            "flights": processed_results,
+            "result_count": len(processed_results)
         }
         
     except Exception as e:
@@ -168,6 +258,26 @@ async def search_flights(
             "status": "error",
             "message": f"An error occurred while searching flights: {str(e)}"
         }
+    
+async def _get_flights(
+    flight_data: List[FlightData],
+    trip: str,
+    passengers: Passengers,
+    seat: str,
+    max_stops: int,
+    currency: str
+) -> List[Result]:
+    flights = get_flights(
+        flight_data=flight_data,
+        trip=trip,
+        passengers=passengers,
+        seat=seat,
+        max_stops=max_stops,
+        fetch_mode="fallback"  # Use fallback mode to avoid asyncio issues
+    )
+
+    return flights
+
 
 async def record_search_history(
     user_id: str,
@@ -192,13 +302,16 @@ async def record_search_history(
         The ID of the search history record
     """
     # Import save_search_history here to avoid circular dependency
-    from app.services.user_service import save_search_history, save_flight_deal
+    from app.services.user_service import save_search_history
     
     try:
         # Find lowest price
         lowest_price = None
         if results:
-            lowest_price = min([result.get("price", float("inf")) for result in results])
+            try:
+                lowest_price = min([float(result.get("price", {}).get("total", float("inf"))) for result in results])
+            except (ValueError, TypeError):
+                logger.warning("Could not determine lowest price from results")
         
         # Create search history record
         search_history = SearchHistory(
@@ -216,264 +329,8 @@ async def record_search_history(
         # Save to database
         search_id = await save_search_history(search_history)
         
-        # If we found a good deal, save it
-        if lowest_price:
-            price_analysis = await analyze_flight_deal(
-                user_id=user_id,
-                origin=origin,
-                destination=destination,
-                price=lowest_price,
-                departure_date=departure_date,
-                return_date=return_date
-            )
-            
-            if price_analysis.get("is_deal", False):
-                airline = results[0].get("airline") if results else "Unknown"
-                
-                await save_deal(
-                    user_id=user_id,
-                    origin=origin,
-                    destination=destination,
-                    price=lowest_price,
-                    airline=airline,
-                    departure_date=departure_date,
-                    return_date=return_date,
-                    deal_quality=price_analysis.get("deal_quality"),
-                    price_difference_percentage=price_analysis.get("price_difference_percentage"),
-                    details=results[0] if results else {}
-                )
-        
         return search_id
         
     except Exception as e:
         logger.error(f"Error recording search history: {str(e)}")
-        raise
-
-async def analyze_flight_deal(
-    user_id: str,
-    origin: str,
-    destination: str,
-    price: float,
-    departure_date: str,
-    return_date: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Analyze if a flight price is a good deal.
-    
-    Args:
-        user_id: The ID of the user
-        origin: Origin airport code
-        destination: Destination airport code
-        price: The flight price in USD
-        departure_date: Departure date in YYYY-MM-DD format
-        return_date: Return date in YYYY-MM-DD format (optional)
-        
-    Returns:
-        Dictionary with price analysis
-    """
-    # In a real implementation, this would compare against historical prices
-    # For now, we'll use a simple rule-based approach
-    
-    # Example baseline prices for common routes (in USD)
-    # These would normally come from a database or API
-    BASELINE_PRICES = {
-        "JFK-LAX": 350,
-        "JFK-SFO": 400,
-        "JFK-LHR": 800,
-        "LAX-JFK": 350,
-        "LAX-HND": 950,
-        "LHR-JFK": 800,
-        "SFO-JFK": 400,
-        "SFO-HND": 900,
-    }
-    
-    # Default baseline price if route not found
-    DEFAULT_DOMESTIC_BASELINE = 300
-    DEFAULT_INTERNATIONAL_BASELINE = 800
-    
-    try:
-        # Get route key
-        route_key = f"{origin}-{destination}"
-        
-        # Get baseline price for this route
-        baseline_price = BASELINE_PRICES.get(route_key)
-        
-        if not baseline_price:
-            # Determine if international or domestic (simplified logic)
-            is_international = len(set([origin[:2], destination[:2]])) > 1
-            baseline_price = DEFAULT_INTERNATIONAL_BASELINE if is_international else DEFAULT_DOMESTIC_BASELINE
-        
-        # Calculate price difference percentage
-        price_diff_percentage = ((baseline_price - price) / baseline_price) * 100
-        
-        # Determine deal quality
-        is_deal = price_diff_percentage > 0
-        
-        if price_diff_percentage >= 25:
-            deal_quality = "great"
-        elif price_diff_percentage >= 10:
-            deal_quality = "good"
-        else:
-            deal_quality = "normal"
-        
-        return {
-            "status": "success",
-            "is_deal": is_deal,
-            "deal_quality": deal_quality,
-            "price": price,
-            "baseline_price": baseline_price,
-            "price_difference": baseline_price - price,
-            "price_difference_percentage": price_diff_percentage,
-            "route": route_key
-        }
-        
-    except Exception as e:
-        logger.error(f"Error analyzing flight deal: {str(e)}")
-        return {
-            "status": "error",
-            "message": f"Error analyzing flight deal: {str(e)}"
-        }
-
-async def save_deal(
-    user_id: str,
-    origin: str,
-    destination: str,
-    price: float,
-    airline: str,
-    departure_date: str,
-    return_date: Optional[str],
-    deal_quality: str,
-    price_difference_percentage: float,
-    details: Dict[str, Any] = {}
-) -> str:
-    """
-    Save a flight deal to the database.
-    
-    Args:
-        user_id: The ID of the user
-        origin: Origin airport code
-        destination: Destination airport code
-        price: The flight price in USD
-        airline: The airline code
-        departure_date: Departure date in YYYY-MM-DD format
-        return_date: Return date in YYYY-MM-DD format (optional)
-        deal_quality: The quality of the deal ("great", "good", "normal")
-        price_difference_percentage: The percentage difference from baseline price
-        details: Additional details about the flight
-        
-    Returns:
-        The ID of the saved deal
-    """
-    # Import already done in record_search_history function
-    
-    try:
-        # Create flight deal record
-        flight_deal = FlightDeal(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            origin=origin,
-            destination=destination,
-            departure_date=departure_date,
-            return_date=return_date,
-            price=price,
-            airline=airline,
-            deal_quality=deal_quality,
-            price_difference_percentage=price_difference_percentage,
-            found_at=datetime.now(),
-            details=details
-        )
-        
-        # Save to database
-        from app.services.user_service import save_flight_deal
-        deal_id = await save_flight_deal(flight_deal)
-        
-        logger.info(f"Saved {deal_quality} deal from {origin} to {destination} at ${price}")
-        return deal_id
-        
-    except Exception as e:
-        logger.error(f"Error saving flight deal: {str(e)}")
-        raise
-
-async def find_deals_for_user(user_id: str, max_deals_per_destination: int = 1) -> List[Dict[str, Any]]:
-    """
-    Find flight deals based on user preferences.
-    
-    Args:
-        user_id: The ID of the user
-        max_deals_per_destination: Maximum number of deals to find per destination
-        
-    Returns:
-        List of flight deals
-    """
-    # Import within function to avoid circular dependencies
-    from app.services.user_service import get_user_by_id, get_flight_deals
-    
-    try:
-        # Get user preferences
-        user = await get_user_by_id(user_id)
-        
-        if not user or not user.preferences:
-            logger.warning(f"No preferences found for user {user_id}")
-            return []
-            
-        preferences = user.preferences
-        
-        # Get home airports and travel preferences
-        home_airports = preferences.home_airports
-        travel_preferences = preferences.travel_preferences
-        
-        if not home_airports or not travel_preferences:
-            logger.warning(f"Incomplete preferences for user {user_id}")
-            return []
-            
-        # Find deals for each destination
-        all_deals = []
-        
-        for travel_pref in travel_preferences:
-            destination = travel_pref.destination
-            
-            # Use the destination directly - CrewAI agent will handle airport code determination
-            # using its knowledge
-            
-            # Search from each home airport
-            for origin in home_airports:
-                # Generate search dates (simplified - in a real app, this would be more sophisticated)
-                search_dates = []
-                
-                if travel_pref.flexible_dates:
-                    # Search for dates in the next 3 months
-                    for i in range(1, 4):
-                        departure_date = (datetime.now() + timedelta(days=30*i)).strftime("%Y-%m-%d")
-                        search_dates.append((departure_date, return_date))
-                else:
-                    # Just search for dates 2 months from now
-                    departure_date = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
-                    return_date = (datetime.now() + timedelta(days=67)).strftime("%Y-%m-%d")
-                    search_dates.append((departure_date, return_date))
-                
-                # Search for each date pair
-                for departure_date, return_date in search_dates:
-                    result = await search_flights(
-                        user_id=user_id,
-                        origin=origin,
-                        destination=destination,
-                        departure_date=departure_date,
-                        return_date=return_date
-                    )
-                    
-                    if result.get("status") == "success" and result.get("results"):
-                        # Deal was saved during search if it's good enough
-                        # We don't need to do anything here
-                        pass
-        
-        # Get the saved deals from the database
-        deals = await get_flight_deals(user_id)
-        
-        # Convert to dictionaries
-        deals_list = [deal.dict() for deal in deals]
-        
-        return deals_list
-        
-    except Exception as e:
-        logger.error(f"Error finding deals for user: {str(e)}")
-        return [] 
+        raise 

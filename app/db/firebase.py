@@ -14,18 +14,8 @@ def initialize_firebase():
         if os.path.exists(root_cred_path):
             cred = credentials.Certificate(root_cred_path)
             app = firebase_admin.initialize_app(cred)
-            logger.info(f"Firebase initialized successfully using credentials file at: {root_cred_path}")
             return app
-        
-        # Then check for credentials path in environment
-        cred_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
-        
-        if cred_path and os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            app = firebase_admin.initialize_app(cred)
-            logger.info(f"Firebase initialized successfully using credentials file at: {cred_path}")
-            return app
-            
+  
         logger.error("No Firebase credentials available. Please place a 'firebase-credentials.json' file in the project root.")
         return None
     except Exception as e:
@@ -46,7 +36,6 @@ def get_db():
         # specifying database names in the Python client
         project_id = firebase_admin.get_app().project_id
         db._database_string_internal = f"projects/{project_id}/databases/travel-agent"
-        logger.info(f"Using Firestore database: travel-agent in project {project_id}")
         
         return db
     except Exception as e:

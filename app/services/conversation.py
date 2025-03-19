@@ -17,8 +17,6 @@ async def handle_incoming_message(sender_phone: str, message_text: str) -> Dict[
     3. Returns a response to be sent back to the user
     """
     try:
-        logger.info(f"Processing message from {sender_phone}: {message_text}")
-        
         # Get or create user
         user = await get_or_create_user(sender_phone)
         
@@ -47,11 +45,9 @@ async def get_or_create_user(phone_number: str):
         user = await get_user_by_phone(phone_number)
         
         if user:
-            logger.info(f"Found existing user for phone {phone_number}")
             return user
             
         # Create new user if not found
-        logger.info(f"Creating new user for phone {phone_number}")
         user_create = UserCreate(phone_number=phone_number)
         user = await create_user(user_create)
         

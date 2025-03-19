@@ -301,8 +301,6 @@ Speak in a friendly, helpful manner. Provide concise, relevant responses.
         Returns:
             The result of the function execution
         """
-        logger.info(f"Executing function {function_name} with args {args_str}")
-        
         # Parse arguments
         # This is a simple parser that handles comma-separated arguments
         # It's not perfect but works for basic cases
@@ -413,9 +411,6 @@ Speak in a friendly, helpful manner. Provide concise, relevant responses.
         """
         try:
             flight_service = flight_service_module
-            
-            logger.info(f"Searching flights from {origin} to {destination} on {departure_date}" + 
-                       (f" with return on {return_date}" if return_date else ""))
             
             # Search for flights
             results = await flight_service.search_flights(

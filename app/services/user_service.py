@@ -330,7 +330,6 @@ async def save_conversation(conversation: Conversation) -> str:
         # Save to Firestore
         db.collection(CONVERSATIONS_COLLECTION).document(conversation.id).set(conversation.dict())
         
-        logger.info(f"Saved conversation with ID: {conversation.id}")
         return conversation.id
         
     except Exception as e:

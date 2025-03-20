@@ -1,0 +1,19 @@
+flight_search_task:
+  description: >
+    Find the best flight options based on user criteria
+  expected_output: >
+    A list of flight options with the following information:
+    - Departure date
+    - Return date
+    - Price
+    - Number of stops
+    - Airline
+    - Flight duration
+  agent: flight_search_agent
+
+conversation_task:
+  description: >
+    Process user messages and respond appropriately. Handle greetings, questions, and determine when to search for flights.
+  expected_output: >
+    A natural, helpful response that addresses the user's message directly.
+  agent: conversation_agent

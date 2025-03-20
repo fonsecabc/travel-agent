@@ -71,13 +71,13 @@ The core intelligence is powered by a team of CrewAI agents that work together:
 
 The application uses Firebase Firestore for data storage. Firebase authentication works as follows:
 
-1. **Default Method**: By default, the application looks for a `firebase-credentials.json` file in the project root directory.
+1. **Default Method**: By default, the application looks for a `credentials.json` file in the project root directory.
 2. **Environment Variable**: If the root file is not found, it checks for the `FIREBASE_CREDENTIALS_PATH` environment variable pointing to a credentials file.
 
 To set up Firebase:
 1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com/)
 2. Generate a service account key from Project Settings > Service Accounts
-3. Save the JSON key as `firebase-credentials.json` in the project root directory
+3. Save the JSON key as `credentials.json` in the project root directory
 4. The application will automatically connect to a Firestore database named "travel-agent" in your project
 
 > Note: Ensure your Firebase project has Firestore enabled before running the application.

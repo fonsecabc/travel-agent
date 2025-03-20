@@ -11,7 +11,7 @@ class UserUseCase:
         """
         self.db = db
 
-    def get_user(self, phone_number: str) -> User:
+    async def get_user(self, phone_number: str) -> User:
         """
         Get a user by phone number.
         """
@@ -22,7 +22,7 @@ class UserUseCase:
             return user
         return User.model_validate(doc)
     
-    def save_user(self, user: User) -> User:
+    async def save_user(self, user: User) -> User:
         """
         Save a user.
         """

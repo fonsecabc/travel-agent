@@ -24,22 +24,24 @@ class MessageProcessor:
         Process a message from the user.
         """
         # Get or create user
-        # user = self.user_use_case.get_user(phone_number)
-        # message = self.chat_use_case.add_message(user.id, "user", content)
-
+        user = await self.user_use_case.get_user(phone_number)
+        await self.chat_use_case.add_message(user.id, "user", content)
+        
+        # Get chat history
+        chat_history = await self.chat_use_case.get_chat_history(user.id)
+        
         # Process the message with CrewAI
         try:
-            # For now, just pass content as inputs for the crew
-            # In a more advanced implementation, we would parse the content
-            # to extract structured information like origin, destination, etc.
+            # Pass content and conversation history as inputs for the crew
             inputs = {
-                'user_message': content
+                'user_message': content,
+                'chat_history': chat_history
             }
             
             response = self.travel_agent.crew().kickoff(inputs=inputs)
             
             # Add the response to the chat
-            # self.chat_use_case.add_message(user.id, "agent", response)
+            await self.chat_use_case.add_message(user.id, "agent", response)
             
             return response
         except Exception as e:

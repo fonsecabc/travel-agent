@@ -1,6 +1,5 @@
 from typing import Dict, Any, Optional, Type
 from pydantic import BaseModel, Field
-
 import logging
 
 from crewai.tools import BaseTool
@@ -51,7 +50,10 @@ class FlightSearchTool(BaseTool):
             destination: Destination location (can be an airport code or city name)
             departure_date: Departure date in YYYY-MM-DD format
             return_date: Return date in YYYY-MM-DD format (optional for one-way)
-            passengers: Number of adult passengers
+            adults: Number of adult passengers
+            children: Number of child passengers
+            infants_in_seat: Number of infants requiring their own seat
+            infants_on_lap: Number of infants that will travel on an adult's lap
             
         Returns:
             Dictionary with search results
@@ -59,7 +61,13 @@ class FlightSearchTool(BaseTool):
         logger.info(f"Searching flights from {origin} to {destination} on {departure_date}")
         
         try:
-            passengers = Passengers(adults=adults, children=children, infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap)
+            passengers = Passengers(
+                adults=adults, 
+                children=children, 
+                infants_in_seat=infants_in_seat, 
+                infants_on_lap=infants_on_lap
+            )
+            
             # Set up flight data
             outbound_flight = FlightData(
                 date=departure_date,
@@ -94,22 +102,10 @@ class FlightSearchTool(BaseTool):
             return {
                 "flights": flights.flights,
             }
-            # return {
-            #     "flights": {
-            #         "origin": origin,
-            #         "destination": destination,
-            #         "departure_date": departure_date,
-            #         "return_date": return_date,
-            #         "price": 100,
-            #         "airline": "Delta",
-            #         "flight_number": "DL123",
-            #         "departure_time": "10:00 AM",
-            #         "arrival_time": "12:00 PM",
-            #         "duration": "2 hours",
-                    
-            #     }
-            # }
             
         except Exception as e:
             logger.error(f"Error searching flights: {str(e)}")
-            raise e
+            return {
+                "error": str(e),
+                "message": "Failed to find flights. Please check your search parameters."
+            } 

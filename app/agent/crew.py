@@ -28,6 +28,7 @@ class TravelAgent():
     def conversation_agent(self) -> Agent:
         return Agent(
             config=self.agents_config['conversation_agent'],
+            memory=True,
             verbose=False
         )
 
@@ -41,6 +42,10 @@ class TravelAgent():
     def conversation_task(self) -> Task:
         return Task(
             config=self.tasks_config['conversation_task'],
+            context=lambda inputs: {
+                "message": inputs.get("user_message", ""),
+                "history": inputs.get("chat_history", [])
+            }
         )
 
     @crew

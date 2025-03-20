@@ -1,6 +1,6 @@
 import logging
 from app.services.user_service import get_user_by_phone, create_user
-from app.services.whatsapp_service import send_whatsapp_message
+# from app.services.whatsapp_service import send_whatsapp_message
 from app.models.user import UserCreate
 from typing import Dict, Any, Optional
 import os

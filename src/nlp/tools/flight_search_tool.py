@@ -1,6 +1,6 @@
-from typing import Dict, Any, Optional, Type
-from pydantic import BaseModel, Field
 import logging
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, Type
 
 from crewai.tools import BaseTool
 

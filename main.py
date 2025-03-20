@@ -26,11 +26,6 @@ def main():
             time.sleep(0.1)
         
         os.system('cls' if os.name == 'nt' else 'clear')
-
-        # final_spaces = " " * 29  
-        # print("\n\n" + final_spaces + colored("BOOM💥", "red", attrs=["bold"]))
-        # time.sleep(1)  # Mantém o BOOM visível por 2 segundos
-        # os.system('cls' if os.name == 'nt' else 'clear')
     
     airplane_animation()
     os.system('cls' if os.name == 'nt' else 'clear')

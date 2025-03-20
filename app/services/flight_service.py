@@ -20,7 +20,7 @@ from app.models.user import SearchHistory
 logger = logging.getLogger("travel-agent")
 
 # Serper API Key
-SERPER_API_KEY = "fe2645b0c7a5327e67821db99d723da553cca232"
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 async def search_flights(
     user_id: str,

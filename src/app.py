@@ -61,8 +61,6 @@ async def app():
             print("\n" + colored("🔍 Processing your message...", "yellow", attrs=["bold"]))
             
             response = await dependencies.message_processor.process(phone_number=phone_number, content=user_message)
-            print(response)
-
             print("\n" + colored("🤖 Assistant: ", "green", attrs=["bold"]))
             
             formatted_response = format_response(response)

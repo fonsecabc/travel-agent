@@ -49,5 +49,4 @@ class TravelAgentCrew:
             }
         )
 
-        print(result.raw)
         return result.raw

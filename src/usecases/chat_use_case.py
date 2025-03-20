@@ -17,7 +17,7 @@ class ChatUseCase:
         """
         Get a chat by user ID.
         """
-        docs = self.db.client.collection("chats").where(filter=("user_id", "==", user_id)).limit(1).get()
+        docs = self.db.client.collection("chats").where("user_id", "==", user_id).limit(1).get()
         if not docs or len(docs) == 0:
             chat = Chat(user_id=user_id)
             self.db.client.collection("chats").document(chat.id).set(chat.model_dump())

@@ -50,13 +50,14 @@ class TravelAgentCrew:
         self.user_id = user_id
         logger.info(f"Initializing TravelAgent for user {user_id}")
     
-    async def process_message(self, message: str, is_new_user: bool = False) -> str:
+    async def process_message(self, message: str, is_new_user: bool = False, language: str = None) -> str:
         """
         Process a message from a user and return a response.
         
         Args:
             message: The message from the user
             is_new_user: Whether this is a new user (for onboarding)
+            language: Force response in a specific language (e.g., "English")
             
         Returns:
             Response message
@@ -80,6 +81,10 @@ class TravelAgentCrew:
                 system_prompt = self._create_onboarding_prompt()
             else:
                 system_prompt = self._create_conversation_prompt(user_info)
+                
+            # Add language preference if specified
+            if language:
+                system_prompt += f"\n\nIMPORTANT: You MUST always respond in {language} regardless of the language of the user's message."
             
             # Build the messages array for the API call
             messages = [{"role": "system", "content": system_prompt}]
@@ -135,6 +140,22 @@ After collecting preferences, offer to help them find flights or answer any othe
 You can search for flights when the user provides:
 - Origin and destination
 - Travel dates (departure and optional return)
+
+IMPORTANT: To execute a flight search, you MUST include the following pattern in your response:
+{search_flights("ORIGIN", "DESTINATION", "YYYY-MM-DD", "RETURN_DATE", ADULTS)}
+
+For example:
+{search_flights("JFK", "LAX", "2023-12-25", "2024-01-02", 1)}
+or for one-way:
+{search_flights("JFK", "LAX", "2023-12-25")}
+
+To update preferences, use:
+{update_preferences("home_airports", ["JFK", "LGA"])}
+{update_preferences("preferred_airlines", ["AA", "DL"])}
+{update_preferences("seat_class", "economy")}
+
+If the user provides all necessary information for a flight search (origin, destination, dates), 
+ALWAYS include the search_flights function call in your response.
 
 Do not ask for personal information beyond what's needed for travel preferences.
 """
@@ -201,9 +222,21 @@ When the user wants to search for flights, you need:
 - Departure date
 - Return date (if it's a round trip)
 
-You can use these functions:
-- search_flights(origin, destination, departure_date, return_date)
-- update_preferences(preference_type, value)
+IMPORTANT: To execute a flight search, you MUST include the following pattern in your response:
+{search_flights("ORIGIN", "DESTINATION", "YYYY-MM-DD", "RETURN_DATE", ADULTS)}
+
+For example:
+{search_flights("JFK", "LAX", "2023-12-25", "2024-01-02", 1)}
+or for one-way:
+{search_flights("JFK", "LAX", "2023-12-25")}
+
+To update preferences, use:
+{update_preferences("home_airports", ["JFK", "LGA"])}
+{update_preferences("preferred_airlines", ["AA", "DL"])}
+{update_preferences("seat_class", "economy")}
+
+If the user provides all necessary information for a flight search (origin, destination, dates), 
+ALWAYS include the search_flights function call in your response.
 
 Speak in a friendly, helpful manner. Provide concise, relevant responses.
 """
@@ -265,6 +298,70 @@ Speak in a friendly, helpful manner. Provide concise, relevant responses.
             except Exception as e:
                 logger.error(f"Error processing search_flights action: {str(e)}")
                 response += f"\n\nI tried to search for flights but encountered an error: {str(e)}"
+        # Detectar intenção de busca de voos mesmo sem o padrão exato
+        elif any(pattern in response.lower() for pattern in ["procurar voos", "buscar voos", "search for flights", "encontrar passagens", "buscar passagens"]):
+            # Tentativa de extrair origem, destino e datas da conversa
+            try:
+                # Verificar se temos informações suficientes na conversa para realizar a busca
+                conversation = await user_service_module.get_user_conversation(self.user_id)
+                conversation_messages = conversation.messages if conversation else []
+                
+                origin = None
+                destination = None
+                departure_date = None
+                return_date = None
+                
+                # Obter preferências do usuário para aeroporto de origem
+                user_info = await self._get_user_info()
+                if user_info.get("preferences") and user_info["preferences"].get("home_airports"):
+                    origin = user_info["preferences"]["home_airports"][0]
+                
+                # Analisar mensagens recentes para extrair informações
+                recent_messages = conversation_messages[-5:] if len(conversation_messages) > 5 else conversation_messages
+                
+                # Buscar destino nas mensagens recentes
+                for msg in recent_messages:
+                    if msg.role == "user":
+                        content = msg.content.lower()
+                        
+                        # Identificar destino
+                        if "para " in content and not destination:
+                            parts = content.split("para ")
+                            if len(parts) > 1:
+                                destination_part = parts[1].split()[0].strip(",.:;?!")
+                                if destination_part and len(destination_part) >= 2:
+                                    destination = destination_part.upper()
+                        
+                        # Identificar origem
+                        if "de " in content and not origin:
+                            parts = content.split("de ")
+                            if len(parts) > 1:
+                                origin_part = parts[1].split()[0].strip(",.:;?!")
+                                if origin_part and len(origin_part) >= 2:
+                                    origin = origin_part.upper()
+                
+                # Para testes, se ainda não temos origem ou destino, usar valores padrão
+                if not origin:
+                    origin = "GRU"  # São Paulo Guarulhos como padrão
+                
+                if not destination:
+                    destination = "JFK"  # Nova York como padrão
+                
+                # Usar data atual + 30 dias como padrão para data de partida
+                from datetime import datetime, timedelta
+                departure_date = (datetime.now().date() + timedelta(days=30)).strftime("%Y-%m-%d")
+                
+                logger.info(f"Extracted search parameters - Origin: {origin}, Destination: {destination}, Date: {departure_date}")
+                
+                # Executar a busca com os parâmetros extraídos
+                result = await self._search_flights(origin, destination, departure_date, return_date)
+                
+                # Adicionar resultados à resposta
+                response = response.rstrip() + "\n\n" + result
+                
+            except Exception as e:
+                logger.error(f"Error with automatic flight search: {str(e)}")
+                response += f"\n\nTentei buscar voos, mas encontrei um erro: {str(e)}"
         
         if "{update_preferences(" in response:
             try:

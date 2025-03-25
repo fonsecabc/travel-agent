@@ -1,5 +1,5 @@
-from  src.nlp.tasks import ConversationTask, SearchFlightTask
-from  src.nlp.agents import ConversationAgent, FlightSearchAgent
+from src.nlp.tasks import ConversationTask
+from src.nlp.agents import ConversationAgent
 
 from crewai import Crew, Process
 from pydantic import BaseModel
@@ -17,16 +17,14 @@ class TravelAgentCrew:
     def __init__(
             self,
             conversation_agent: ConversationAgent,
-            flight_search_agent: FlightSearchAgent,
             conversation_task: ConversationTask,
-            search_flight_task: SearchFlightTask
     ):
         """
         Initialize the TravelAgentCrew with tools and agents.
         """
         self.crew = Crew(
-            agents=[conversation_agent, flight_search_agent],
-            tasks=[conversation_task, search_flight_task],
+            agents=[conversation_agent],
+            tasks=[conversation_task],
             process=Process.sequential,
             verbose=False,
             max_rpm=20

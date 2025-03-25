@@ -31,7 +31,7 @@ class FlightSearchTool(BaseTool):
     description: str = "Search for live flights tickets."
     args_schema: Type[BaseModel] = FlightSearchToolInput
 
-    async def _run(
+    def _run(
         self,
         origin: str,
         destination: str,

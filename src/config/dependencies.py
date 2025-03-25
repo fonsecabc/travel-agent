@@ -4,8 +4,8 @@ from src.usecases import ChatUseCase, UserUseCase
 
 from src.nlp.crews import TravelAgentCrew
 from src.nlp.tools import FlightSearchTool
-from src.nlp.tasks import ConversationTask, SearchFlightTask
-from src.nlp.agents import ConversationAgent, FlightSearchAgent
+from src.nlp.tasks import ConversationTask
+from src.nlp.agents import ConversationAgent
 
 class Dependencies:
     def __init__(self):
@@ -22,26 +22,16 @@ class Dependencies:
 
         self.conversation_agent = ConversationAgent(
             agent_model="gpt-4o-mini",
-            temperature=0.3
+            temperature=0.3,
+            tools=[self.flight_search_tool]
         )
         self.conversation_task = ConversationTask(
             agent=self.conversation_agent
         )
 
-        self.flight_search_agent = FlightSearchAgent(
-            agent_model="gpt-4o-mini",
-            temperature=0.3,
-            tools=[self.flight_search_tool]
-        )
-        self.search_flight_task = SearchFlightTask(
-            agent=self.flight_search_agent,
-        )
-
         self.travel_agent_crew = TravelAgentCrew(
             conversation_agent=self.conversation_agent,
-            flight_search_agent=self.flight_search_agent,
-            conversation_task=self.conversation_task,
-            search_flight_task=self.search_flight_task
+            conversation_task=self.conversation_task
         )
 
         self.message_processor = MessageProcessor(

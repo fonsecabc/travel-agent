@@ -27,7 +27,7 @@ class TravelAgentCrew:
             agents=[conversation_agent],
             tasks=[conversation_task],
             process=Process.sequential,
-            verbose=True,
+            verbose=False,
             max_rpm=20,
             max_retries=3
         )

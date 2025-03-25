@@ -1,35 +1,33 @@
 import logging
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, Type
-
 from crewai.tools import BaseTool
+from crewai_tools import SerperDevTool
 
 logger = logging.getLogger(__name__)
 
-from fast_flights import (
-    get_flights,
-    FlightData,
-    Passengers,
-)
-
 class FlightSearchToolInput(BaseModel):
     """Input schema for FlightSearchTool."""
-    origin: str = Field(..., description="Origin location (can be an airport code or city name)")
-    destination: str = Field(..., description="Destination location (can be an airport code or city name)")
-    departure_date: str = Field(..., description="Departure date in YYYY-MM-DD format")
-    return_date: Optional[str] = Field(None, description="Return date in YYYY-MM-DD format (optional for one-way)")
-    adults: int = Field(1, description="Number of adult passengers")
-    children: int = Field(0, description="Number of children passengers")
-    infants_in_seat: int = Field(0, description="Number of infants in seat")
-    infants_on_lap: int = Field(0, description="Number of infants on lap")
+    origin: str = Field(..., description="Local de origem (pode ser código de aeroporto ou nome da cidade)")
+    destination: str = Field(..., description="Local de destino (pode ser código de aeroporto ou nome da cidade)")
+    departure_date: str = Field(..., description="Data de partida no formato YYYY-MM-DD")
+    return_date: Optional[str] = Field(None, description="Data de retorno no formato YYYY-MM-DD (opcional para voos só de ida)")
+    adults: int = Field(1, description="Número de passageiros adultos")
+    children: int = Field(0, description="Número de passageiros crianças")
+    infants_in_seat: int = Field(0, description="Número de bebês com assento")
+    infants_on_lap: int = Field(0, description="Número de bebês no colo")
 
 class FlightSearchTool(BaseTool):
     """
-    Search for flights using the fast-flights package.
+    Ferramenta de busca de voos usando o SerperDevTool.
     """
-    name: str = "Flight Search Tool"
-    description: str = "Search for live flights tickets."
+    name: str = "Ferramenta de Busca de Voos"
+    description: str = "Busca voos em tempo real usando o Serper."
     args_schema: Type[BaseModel] = FlightSearchToolInput
+
+    def __init__(self):
+        super().__init__()
+        self.serper_tool = SerperDevTool()
 
     def _run(
         self,
@@ -43,69 +41,62 @@ class FlightSearchTool(BaseTool):
         infants_on_lap: int = 0,
     ) -> Dict[str, Any]:
         """
-        Search for flights using the fast-flights package which scrapes Google Flights.
+        Busca voos usando o SerperDevTool.
         
         Args:
-            origin: Origin location (can be an airport code or city name)
-            destination: Destination location (can be an airport code or city name)
-            departure_date: Departure date in YYYY-MM-DD format
-            return_date: Return date in YYYY-MM-DD format (optional for one-way)
-            adults: Number of adult passengers
-            children: Number of child passengers
-            infants_in_seat: Number of infants requiring their own seat
-            infants_on_lap: Number of infants that will travel on an adult's lap
+            origin: Local de origem (pode ser código de aeroporto ou nome da cidade)
+            destination: Local de destino (pode ser código de aeroporto ou nome da cidade)
+            departure_date: Data de partida no formato YYYY-MM-DD
+            return_date: Data de retorno no formato YYYY-MM-DD (opcional para voos só de ida)
+            adults: Número de passageiros adultos
+            children: Número de passageiros crianças
+            infants_in_seat: Número de bebês com assento
+            infants_on_lap: Número de bebês no colo
             
         Returns:
-            Dictionary with search results
+            Dicionário com resultados da busca
         """
-        logger.info(f"Searching flights from {origin} to {destination} on {departure_date}")
+        logger.info(f"Buscando voos de {origin} para {destination} em {departure_date}")
         
         try:
-            passengers = Passengers(
-                adults=adults, 
-                children=children, 
-                infants_in_seat=infants_in_seat, 
-                infants_on_lap=infants_on_lap
-            )
-            
-            # Set up flight data
-            outbound_flight = FlightData(
-                date=departure_date,
-                from_airport=origin,
-                to_airport=destination
-            )
-            
-            flights_data = [outbound_flight]
-            trip = "one-way"
-
-            # Determine trip type and execute search
+            # Constrói a query de busca
+            search_query = f"passagens aéreas voos mais baratas de {origin} para {destination} em {departure_date}"
             if return_date:
-                # Round trip
-                inbound_flight = FlightData(
-                    date=return_date,
-                    from_airport=destination,
-                    to_airport=origin
-                )
+                search_query += f" retorno {return_date}"
+            
+            if adults > 1 or children > 0 or infants_in_seat > 0 or infants_on_lap > 0:
+                search_query += f" para {adults} adultos"
+                if children > 0:
+                    search_query += f", {children} crianças"
+                if infants_in_seat > 0:
+                    search_query += f", {infants_in_seat} bebês com assento"
+                if infants_on_lap > 0:
+                    search_query += f", {infants_on_lap} bebês no colo"
 
-                flights_data.append(inbound_flight)
-                trip = "round-trip"
+            # Executa a busca usando o SerperDevTool
+            results = self.serper_tool.run(search_query)
 
-            # Execute search
-            flights = get_flights(
-                flight_data=flights_data,
-                trip=trip,
-                passengers=passengers,
-                seat="economy",
-                max_stops=0
-            )
-
-            return {
-                "flights": flights.flights,
+            # Processa e formata os resultados
+            formatted_results = {
+                "search_query": search_query,
+                "results": results,
+                "origin": origin,
+                "destination": destination,
+                "departure_date": departure_date,
+                "return_date": return_date,
+                "passengers": {
+                    "adults": adults,
+                    "children": children,
+                    "infants_in_seat": infants_in_seat,
+                    "infants_on_lap": infants_on_lap
+                }
             }
+
+            return formatted_results
             
         except Exception as e:
-            logger.error(f"Error searching flights: {str(e)}")
+            logger.error(f"Erro ao buscar voos: {str(e)}")
             return {
                 "error": str(e),
-                "message": "Failed to find flights. Please check your search parameters."
+                "message": "Falha ao encontrar voos. Por favor, verifique os parâmetros da busca."
             } 

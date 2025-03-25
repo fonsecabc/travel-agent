@@ -1,3 +1,4 @@
+from datetime import datetime
 from src.nlp.tasks import ConversationTask
 from src.nlp.agents import ConversationAgent
 
@@ -26,8 +27,9 @@ class TravelAgentCrew:
             agents=[conversation_agent],
             tasks=[conversation_task],
             process=Process.sequential,
-            verbose=False,
-            max_rpm=20
+            verbose=True,
+            max_rpm=20,
+            max_retries=3
         )
     
     def run(self, input: TravelAgentCrewInput):
@@ -40,10 +42,14 @@ class TravelAgentCrew:
         Returns:    
             The result from the crew execution
         """
+
+        date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         result = self.crew.kickoff(
             inputs={
                 "message": input.message,
-                "history": input.history
+                "history": input.history,
+                "date": date
             }
         )
 

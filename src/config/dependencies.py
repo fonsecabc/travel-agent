@@ -3,7 +3,7 @@ from src.processors import MessageProcessor
 from src.usecases import ChatUseCase, UserUseCase
 
 from src.nlp.crews import TravelAgentCrew
-from src.nlp.tools import FlightSearchTool
+from crewai_tools import SerperDevTool
 from src.nlp.tasks import ConversationTask
 from src.nlp.agents import ConversationAgent
 
@@ -18,12 +18,12 @@ class Dependencies:
             db=self.db
         )
 
-        self.flight_search_tool = FlightSearchTool()
+        self.serper_tool = SerperDevTool()
 
         self.conversation_agent = ConversationAgent(
-            agent_model="gpt-4o-mini",
+            agent_model="gpt-4",
             temperature=0.3,
-            tools=[self.flight_search_tool]
+            tools=[self.serper_tool]
         )
         self.conversation_task = ConversationTask(
             agent=self.conversation_agent
@@ -38,5 +38,4 @@ class Dependencies:
             chat_use_case=self.chat_use_case,
             user_use_case=self.user_use_case,
             travel_agent_crew=self.travel_agent_crew
-        )
-
+        ) 
